@@ -1,187 +1,221 @@
-import { Component, DestroyRef, DOCUMENT, effect, inject, OnInit, Renderer2, signal, WritableSignal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ChartOptions } from 'chart.js';
+import { DOCUMENT, DecimalPipe } from '@angular/common';
 import {
-  AvatarComponent,
-  ButtonDirective,
-  ButtonGroupComponent,
-  CardBodyComponent,
-  CardComponent,
-  CardFooterComponent,
-  CardHeaderComponent,
-  ColComponent,
-  FormCheckLabelDirective,
-  GutterDirective,
-  ProgressComponent,
-  RowComponent,
-  TableDirective
-} from '@coreui/angular';
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal
+} from '@angular/core';
+import { ChartData, ChartOptions } from 'chart.js';
 import { ChartjsComponent } from '@coreui/angular-chartjs';
-import { IconDirective } from '@coreui/icons-angular';
 
-import { WidgetsBrandComponent } from '../widgets/widgets-brand/widgets-brand.component';
-import { WidgetsDropdownComponent } from '../widgets/widgets-dropdown/widgets-dropdown.component';
-import { DashboardChartsData, IChartProps } from './dashboard-charts-data';
+import { AnalyticsService, Metric, RangeKey } from '../../core/analytics.service';
 
-interface IUser {
-  name: string;
-  state: string;
-  registered: string;
-  country: string;
-  usage: number;
-  period: string;
-  payment: string;
-  activity: string;
-  avatar: string;
-  status: string;
-  color: string;
+/** Token values are only readable once the stylesheet has applied. */
+const readToken = (doc: Document, name: string): string =>
+  getComputedStyle(doc.documentElement).getPropertyValue(name).trim();
+
+interface Palette {
+  readonly series1: string;
+  readonly series2: string;
+  readonly ink: string;
+  readonly muted: string;
+  readonly grid: string;
+  readonly surface: string;
 }
 
+const RANGES: readonly { key: RangeKey; label: string }[] = [
+  { key: '7d', label: '7 days' },
+  { key: '30d', label: '30 days' },
+  { key: '90d', label: '90 days' }
+];
+
 @Component({
-  templateUrl: 'dashboard.component.html',
-  styleUrls: ['dashboard.component.scss'],
-  imports: [WidgetsDropdownComponent, CardComponent, CardBodyComponent, RowComponent, ColComponent, ButtonDirective, IconDirective, ReactiveFormsModule, ButtonGroupComponent, FormCheckLabelDirective, ChartjsComponent, CardFooterComponent, GutterDirective, ProgressComponent, WidgetsBrandComponent, CardHeaderComponent, TableDirective, AvatarComponent]
+  selector: 'app-dashboard',
+  templateUrl: './dashboard.component.html',
+  styleUrls: ['./dashboard.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ChartjsComponent, DecimalPipe]
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent {
+  readonly #doc = inject(DOCUMENT);
+  readonly #analytics = inject(AnalyticsService);
 
-  readonly #destroyRef: DestroyRef = inject(DestroyRef);
-  readonly #document: Document = inject(DOCUMENT);
-  readonly #renderer: Renderer2 = inject(Renderer2);
-  readonly #chartsData: DashboardChartsData = inject(DashboardChartsData);
+  protected readonly ranges = RANGES;
+  protected readonly range = this.#analytics.range;
+  protected readonly metrics = this.#analytics.metrics;
+  protected readonly channels = this.#analytics.channels;
 
-  public users: IUser[] = [
-    {
-      name: 'Yiorgos Avraamu',
-      state: 'New',
-      registered: 'Jan 1, 2021',
-      country: 'Us',
-      usage: 50,
-      period: 'Jun 11, 2021 - Jul 10, 2021',
-      payment: 'Mastercard',
-      activity: '10 sec ago',
-      avatar: './assets/images/avatars/1.jpg',
-      status: 'success',
-      color: 'success'
-    },
-    {
-      name: 'Avram Tarasios',
-      state: 'Recurring ',
-      registered: 'Jan 1, 2021',
-      country: 'Br',
-      usage: 10,
-      period: 'Jun 11, 2021 - Jul 10, 2021',
-      payment: 'Visa',
-      activity: '5 minutes ago',
-      avatar: './assets/images/avatars/2.jpg',
-      status: 'danger',
-      color: 'info'
-    },
-    {
-      name: 'Quintin Ed',
-      state: 'New',
-      registered: 'Jan 1, 2021',
-      country: 'In',
-      usage: 74,
-      period: 'Jun 11, 2021 - Jul 10, 2021',
-      payment: 'Stripe',
-      activity: '1 hour ago',
-      avatar: './assets/images/avatars/3.jpg',
-      status: 'warning',
-      color: 'warning'
-    },
-    {
-      name: 'Enéas Kwadwo',
-      state: 'Sleep',
-      registered: 'Jan 1, 2021',
-      country: 'Fr',
-      usage: 98,
-      period: 'Jun 11, 2021 - Jul 10, 2021',
-      payment: 'Paypal',
-      activity: 'Last month',
-      avatar: './assets/images/avatars/4.jpg',
-      status: 'secondary',
-      color: 'danger'
-    },
-    {
-      name: 'Agapetus Tadeáš',
-      state: 'New',
-      registered: 'Jan 1, 2021',
-      country: 'Es',
-      usage: 22,
-      period: 'Jun 11, 2021 - Jul 10, 2021',
-      payment: 'ApplePay',
-      activity: 'Last week',
-      avatar: './assets/images/avatars/5.jpg',
-      status: 'success',
-      color: 'primary'
-    },
-    {
-      name: 'Friderik Dávid',
-      state: 'New',
-      registered: 'Jan 1, 2021',
-      country: 'Pl',
-      usage: 43,
-      period: 'Jun 11, 2021 - Jul 10, 2021',
-      payment: 'Amex',
-      activity: 'Yesterday',
-      avatar: './assets/images/avatars/6.jpg',
-      status: 'info',
-      color: 'dark'
-    }
-  ];
+  /** Re-read on theme change so the charts follow the palette. */
+  readonly #palette = signal<Palette>(this.#readPalette());
 
-  public mainChart: IChartProps = { type: 'line' };
-  public mainChartRef: WritableSignal<any> = signal(undefined);
-  #mainChartRefEffect = effect(() => {
-    if (this.mainChartRef()) {
-      this.setChartStyles();
-    }
-  });
-  public chart: Array<IChartProps> = [];
-  public trafficRadioGroup = new FormGroup({
-    trafficRadio: new FormControl('Month')
+  protected readonly hero = computed(() => this.metrics()[0]);
+
+  protected readonly revenueChart = computed<ChartData>(() => {
+    const palette = this.#palette();
+    const [revenue, orders] = this.#analytics.series();
+
+    return {
+      labels: revenue.points.map((point) => point.date),
+      datasets: [
+        {
+          label: 'Revenue',
+          data: revenue.points.map((point) => point.value),
+          borderColor: palette.series1,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBorderWidth: 2,
+          pointHoverBorderColor: palette.surface,
+          pointHoverBackgroundColor: palette.series1,
+          tension: 0.25
+        },
+        {
+          label: 'Orders (indexed)',
+          data: this.#indexTo(orders.points.map((p) => p.value), revenue.points.map((p) => p.value)),
+          borderColor: palette.series2,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [4, 3],
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBorderWidth: 2,
+          pointHoverBorderColor: palette.surface,
+          pointHoverBackgroundColor: palette.series2,
+          tension: 0.25
+        }
+      ]
+    };
   });
 
-  ngOnInit(): void {
-    this.initCharts();
-    this.updateChartOnColorModeChange();
+  protected readonly channelChart = computed<ChartData>(() => {
+    const palette = this.#palette();
+    const channels = this.channels();
+
+    return {
+      labels: channels.map((channel) => channel.label),
+      datasets: [
+        {
+          label: 'Sessions',
+          data: channels.map((channel) => channel.value),
+          backgroundColor: palette.series1,
+          borderRadius: 4,
+          borderSkipped: 'start',
+          barPercentage: 0.6
+        }
+      ]
+    };
+  });
+
+  protected readonly lineOptions = computed<ChartOptions>(() => this.#baseOptions(true));
+  protected readonly barOptions = computed<ChartOptions>(() => this.#baseOptions(false));
+
+  constructor() {
+    // app.component dispatches this whenever the colour mode changes.
+    const onSchemeChange = () => this.#palette.set(this.#readPalette());
+    this.#doc.documentElement.addEventListener('ColorSchemeChange', onSchemeChange);
+    inject(DestroyRef).onDestroy(() =>
+      this.#doc.documentElement.removeEventListener('ColorSchemeChange', onSchemeChange)
+    );
   }
 
-  initCharts(): void {
-    this.mainChartRef()?.stop();
-    this.mainChart = this.#chartsData.mainChart;
+  protected setRange(range: RangeKey): void {
+    this.#analytics.setRange(range);
   }
 
-  setTrafficPeriod(value: string): void {
-    this.trafficRadioGroup.setValue({ trafficRadio: value });
-    this.#chartsData.initMainChart(value);
-    this.initCharts();
+  /** A rise is not automatically good — churn going up is a regression. */
+  protected deltaTone(metric: Metric): 'good' | 'bad' | 'flat' {
+    if (Math.abs(metric.delta) < 0.0005) return 'flat';
+    return metric.delta > 0 === metric.riseIsGood ? 'good' : 'bad';
   }
 
-  handleChartRef($chartRef: any) {
-    if ($chartRef) {
-      this.mainChartRef.set($chartRef);
-    }
+  protected deltaLabel(metric: Metric): string {
+    const pct = (metric.delta * 100).toFixed(1);
+    return `${metric.delta > 0 ? '+' : ''}${pct}%`;
   }
 
-  updateChartOnColorModeChange() {
-    const unListen = this.#renderer.listen(this.#document.documentElement, 'ColorSchemeChange', () => {
-      this.setChartStyles();
-    });
-
-    this.#destroyRef.onDestroy(() => {
-      unListen();
-    });
+  /**
+   * Two measures of different magnitude share one axis by indexing the second
+   * onto the first's range. A second y-axis would let the crossing points imply
+   * a relationship that is not in the data.
+   */
+  #indexTo(values: readonly number[], reference: readonly number[]): number[] {
+    const maxValue = Math.max(...values, 1);
+    const maxReference = Math.max(...reference, 1);
+    return values.map((value) => (value / maxValue) * maxReference);
   }
 
-  setChartStyles() {
-    if (this.mainChartRef()) {
-      setTimeout(() => {
-        const options: ChartOptions = { ...this.mainChart.options };
-        const scales = this.#chartsData.getScales();
-        this.mainChartRef().options.scales = { ...options.scales, ...scales };
-        this.mainChartRef().update();
-      });
-    }
+  #readPalette(): Palette {
+    return {
+      series1: readToken(this.#doc, '--series-1') || '#2a78d6',
+      series2: readToken(this.#doc, '--series-2') || '#eb6834',
+      ink: readToken(this.#doc, '--ink') || '#0b0b0b',
+      muted: readToken(this.#doc, '--ink-muted') || '#898781',
+      grid: readToken(this.#doc, '--rule') || '#e1e0d9',
+      surface: readToken(this.#doc, '--surface') || '#fcfcfb'
+    };
+  }
+
+  #baseOptions(isTimeSeries: boolean): ChartOptions {
+    const palette = this.#palette();
+
+    return {
+      maintainAspectRatio: false,
+      // Identity is carried by the legend and the direct labels, never by
+      // colour alone, so the legend stays on for the two-series chart.
+      plugins: {
+        legend: {
+          display: isTimeSeries,
+          position: 'top',
+          align: 'end',
+          labels: {
+            boxWidth: 8,
+            boxHeight: 8,
+            usePointStyle: true,
+            pointStyle: 'circle',
+            color: palette.muted,
+            font: { size: 11 }
+          }
+        },
+        tooltip: {
+          mode: isTimeSeries ? 'index' : 'nearest',
+          intersect: false,
+          backgroundColor: palette.ink,
+          titleColor: palette.surface,
+          bodyColor: palette.surface,
+          padding: 10,
+          displayColors: true,
+          boxWidth: 8,
+          boxHeight: 8,
+          usePointStyle: true
+        }
+      },
+      interaction: { mode: isTimeSeries ? 'index' : 'nearest', intersect: false },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: palette.grid },
+          ticks: {
+            color: palette.muted,
+            font: { size: 11 },
+            maxRotation: 0,
+            autoSkipPadding: 24
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: palette.grid, tickLength: 0 },
+          border: { display: false },
+          ticks: {
+            color: palette.muted,
+            font: { size: 11 },
+            padding: 8,
+            maxTicksLimit: 5
+          }
+        }
+      }
+    };
   }
 }
