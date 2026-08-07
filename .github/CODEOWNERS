@@ -1,0 +1,16 @@
+# Every pull request is reviewed by the maintainer before it reaches main.
+# GitHub requests this review automatically when a pull request is opened.
+*                       @tbwtnkdev-rgb
+
+# Design system and shell
+/src/scss/              @tbwtnkdev-rgb @Super23456
+/src/app/layout/        @tbwtnkdev-rgb @Super23456
+
+# Data layer and feature pages
+/src/app/core/          @tbwtnkdev-rgb @super-watcharapong
+/src/app/views/         @tbwtnkdev-rgb @super-watcharapong
+
+# Build, CI and dependency policy stay with the maintainer alone.
+/.github/               @tbwtnkdev-rgb
+/package.json           @tbwtnkdev-rgb
+/angular.json           @tbwtnkdev-rgb

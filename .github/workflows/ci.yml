@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A newer run on the same branch makes the older one pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # Angular 22 refuses anything below this.
+          node-version: 24.15.0
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npx ng build --configuration production
+
+      - name: Report bundle size
+        run: |
+          echo "### Bundle" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist/* >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  licences:
+    name: Licence check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.15.0
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # The point of this project is that every dependency stays free to use.
+      # A paid CoreUI PRO package appearing in the tree is a build failure, not
+      # a code review comment.
+      - name: Fail on proprietary CoreUI packages
+        run: |
+          if npm ls --all --parseable 2>/dev/null | grep -E 'node_modules/@coreui/(.*-)?pro'; then
+            echo "::error::A CoreUI PRO package is in the dependency tree."
+            exit 1
+          fi
+          echo "No proprietary CoreUI packages found."
