@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: dashboard-db
+    restart: unless-stopped
+    environment:
+      # No defaults for the password on purpose: a compose file that starts
+      # with a working password is a compose file that ships one to production.
+      POSTGRES_DB: ${POSTGRES_DB:-dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Applied in filename order the first time the volume is empty.
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Dependants wait on this rather than racing the server's startup, which
+      # accepts connections before it is ready to answer them.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashboard} -d ${POSTGRES_DB:-dashboard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  db-data:
