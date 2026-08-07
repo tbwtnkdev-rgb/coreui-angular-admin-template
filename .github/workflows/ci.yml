@@ -27,8 +27,13 @@ jobs:
           node-version: 24.15.0
           cache: npm
 
+      # `npm install`, not `npm ci`, and that is a known compromise. The
+      # committed lockfile was generated on Windows, where @angular/cli
+      # resolves listr2@10.2.2; on Linux the same tree wants listr2@10.2.1, so
+      # `npm ci` rejects the lockfile it is handed. Tracked in #16 — once the
+      # lockfile is regenerated on Linux this goes back to `npm ci`.
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Build
         run: npx ng build --configuration production
@@ -51,8 +56,13 @@ jobs:
           node-version: 24.15.0
           cache: npm
 
+      # `npm install`, not `npm ci`, and that is a known compromise. The
+      # committed lockfile was generated on Windows, where @angular/cli
+      # resolves listr2@10.2.2; on Linux the same tree wants listr2@10.2.1, so
+      # `npm ci` rejects the lockfile it is handed. Tracked in #16 — once the
+      # lockfile is regenerated on Linux this goes back to `npm ci`.
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       # The point of this project is that every dependency stays free to use.
       # A paid CoreUI PRO package appearing in the tree is a build failure, not
