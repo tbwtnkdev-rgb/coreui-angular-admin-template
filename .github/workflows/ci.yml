@@ -45,6 +45,64 @@ jobs:
           du -sh dist/* >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+  database:
+    name: Database
+    runs-on: ubuntu-latest
+
+    # A service container rather than compose: the runner manages the
+    # lifecycle and the health gate, and the job cannot start querying before
+    # the server is ready to answer.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: dashboard
+          POSTGRES_USER: dashboard
+          # Local to this runner and destroyed with it. Not a secret, and
+          # pretending otherwise by putting it in the secret store would only
+          # make the real secrets harder to find.
+          POSTGRES_PASSWORD: ci-throwaway
+        options: >-
+          --health-cmd "pg_isready -U dashboard -d dashboard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: dashboard
+      PGUSER: dashboard
+      PGPASSWORD: ci-throwaway
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Apply schema
+        run: |
+          shopt -s nullglob
+          for file in db/*.sql; do
+            echo "── $file"
+            psql -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+
+      - name: Run schema tests
+        run: |
+          shopt -s nullglob
+          for file in db/tests/*.sql; do
+            echo "── $file"
+            psql -v ON_ERROR_STOP=1 -f "$file"
+          done
+
+      - name: Report schema
+        run: |
+          echo "### Tables" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          psql -c "\dt" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
   licences:
     name: Licence check
     runs-on: ubuntu-latest
