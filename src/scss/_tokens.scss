@@ -1,0 +1,114 @@
+// Design tokens.
+//
+// Colour, type scale and rhythm are decisions here rather than whatever
+// Bootstrap happens to ship. Everything downstream reads these roles, so a
+// palette change lands in one place.
+//
+// The dark values key off `data-coreui-theme`, the attribute CoreUI's own
+// ColorModeService already stamps on <html>. A second theme service would
+// fight it for the same job, so this rides on the one that exists and adds the
+// `prefers-color-scheme` fallback for the "auto" setting.
+//
+// Series colours come from a palette validated for colour-vision deficiency,
+// so charts and UI draw on one system instead of drifting apart. Slot order is
+// the safety mechanism, not decoration: assign in order, never cycle.
+
+:root {
+  // Planes and ink
+  --plane: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-sunken: #f2f2ee;
+  --ink: #0b0b0b;
+  --ink-secondary: #52514e;
+  --ink-muted: #898781;
+  --rule: #e1e0d9;
+  --rule-strong: #c3c2b7;
+  --ring: rgb(11 11 11 / 10%);
+
+  // Categorical series, fixed order
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+
+  // Status — reserved, never reused as a series colour, and always paired with
+  // an icon and a label so meaning never rests on hue alone.
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+
+  --accent: var(--series-1);
+
+  // Type scale — deliberate jumps, not a uniform ramp
+  --text-micro: 0.6875rem;
+  --text-small: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-lead: 1.125rem;
+  --text-figure: clamp(1.75rem, 1.2rem + 1.6vw, 2.5rem);
+  --text-hero: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+
+  // Rhythm — not uniform padding everywhere
+  --gap-hair: 0.25rem;
+  --gap-tight: 0.5rem;
+  --gap: 1rem;
+  --gap-wide: 1.5rem;
+  --gap-section: 2.5rem;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  --duration: 160ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+// Dark is a selected set of steps against a dark surface, not an inversion of
+// the light values. The series hues are re-stepped for the dark band rather
+// than reused.
+@mixin dark-tokens {
+  --plane: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-sunken: #131312;
+  --ink: #fff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+  --rule: #2c2c2a;
+  --rule-strong: #383835;
+  --ring: rgb(255 255 255 / 10%);
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+
+  --good-text: #0ca30c;
+}
+
+// Explicit choice wins outright.
+:root[data-coreui-theme="dark"] {
+  @include dark-tokens;
+}
+
+// "auto" leaves the attribute at auto and defers to the OS. The :not() guard
+// keeps an explicit light choice from being overridden here.
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-coreui-theme="light"])) {
+    @include dark-tokens;
+  }
+}
+
+// Numbers in columns must line up; standalone figures should keep the
+// proportional widths the typeface was drawn with.
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
