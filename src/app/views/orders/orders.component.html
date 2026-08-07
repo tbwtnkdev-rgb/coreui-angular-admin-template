@@ -1,0 +1,98 @@
+<section class="orders">
+  <!-- Filters in one row above the data they govern. -->
+  <header class="orders__filters">
+    <label class="field">
+      <span class="visually-hidden">Search orders</span>
+      <input
+        type="search"
+        class="field__input"
+        placeholder="Search order, customer or region"
+        [ngModel]="query()"
+        (ngModelChange)="query.set($event)"
+      />
+    </label>
+
+    <div class="chips" role="group" aria-label="Filter by status">
+      <button
+        type="button"
+        class="chip"
+        [class.chip--on]="status() === 'all'"
+        [attr.aria-pressed]="status() === 'all'"
+        (click)="status.set('all')"
+      >
+        All
+      </button>
+      @for (option of statuses; track option) {
+        <button
+          type="button"
+          class="chip"
+          [class.chip--on]="status() === option"
+          [attr.aria-pressed]="status() === option"
+          (click)="status.set(option)"
+        >
+          <span class="chip__glyph" [class]="'status-' + option" aria-hidden="true">{{ glyph[option] }}</span>
+          {{ option }}
+        </button>
+      }
+    </div>
+
+    <button type="button" class="chip chip--ghost" (click)="clear()">Reset</button>
+  </header>
+
+  <p class="orders__summary">
+    <strong class="tabular">{{ rows().length }}</strong> orders
+    · <strong class="tabular">{{ total() | number: '1.0-0' }}</strong> THB
+  </p>
+
+  <!-- Wide content scrolls inside its own container, never the page. -->
+  <div class="orders__scroll">
+    <table class="table">
+      <caption class="visually-hidden">
+        Orders, sortable by any column
+      </caption>
+      <thead>
+        <tr>
+          @for (column of columns; track column.key) {
+            <th
+              scope="col"
+              [class.table__num]="column.numeric"
+              [attr.aria-sort]="ariaSort(column.key)"
+            >
+              <button type="button" class="table__sort" (click)="sortBy(column.key)">
+                {{ column.label }}
+                <span class="table__arrow" aria-hidden="true">
+                  @if (ariaSort(column.key) === 'ascending') { ↑ }
+                  @else if (ariaSort(column.key) === 'descending') { ↓ }
+                  @else { · }
+                </span>
+              </button>
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (order of rows(); track order.id) {
+          <tr>
+            <td class="tabular table__id">{{ order.id }}</td>
+            <td>{{ order.customer }}</td>
+            <td>{{ order.region }}</td>
+            <td class="tabular">{{ order.placed }}</td>
+            <td class="tabular table__num">{{ order.total | number: '1.0-0' }}</td>
+            <td>
+              <span class="status" [class]="'status-' + order.status">
+                <span class="status__glyph" aria-hidden="true">{{ glyph[order.status] }}</span>
+                {{ order.status }}
+              </span>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td class="table__empty" [attr.colspan]="columns.length">
+              No orders match that filter.
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</section>
