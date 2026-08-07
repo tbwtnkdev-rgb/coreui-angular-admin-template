@@ -10,7 +10,6 @@
       "@vitest/browser-playwright"
     ],
     "paths": {
-      "@docs-components/*": ["./src/components/*"],
       "*": ["./*"]
     }
   },
