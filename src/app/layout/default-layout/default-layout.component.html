@@ -2,20 +2,25 @@
 <c-sidebar
   #sidebar1="cSidebar"
   class="d-print-none sidebar sidebar-fixed border-end"
-  colorScheme="dark"
   id="sidebar1"
   visible
 >
   <c-sidebar-header class="border-bottom">
-    <c-sidebar-brand [routerLink]="[]">
-      <svg [class]="{icon: false}" cIcon class="sidebar-brand-full" height="32" name="logo" title="CoreUI Logo"></svg>
-      <svg cIcon class="sidebar-brand-narrow" height="32" name="signet" title="CoreUI Logo"></svg>
+    <c-sidebar-brand [routerLink]="['/dashboard']" class="app-brand">
+      <span class="app-brand__mark" aria-hidden="true"></span>
+      <span class="app-brand__text">
+        <strong>Console</strong>
+        <small>Analytics</small>
+      </span>
     </c-sidebar-brand>
   </c-sidebar-header>
 
-  <ng-scrollbar pointerEventsMethod="scrollbar" visibility="hover">
+  <!-- Native overflow rather than a scrollbar library: the sidebar is a
+       plain scrolling column, and the OS scrollbar already knows how to
+       behave on every platform we ship to. -->
+  <div class="sidebar-scroll">
     <c-sidebar-nav [navItems]="navItems" dropdownMode="close" compact />
-  </ng-scrollbar>
+  </div>
 
   @if (!sidebar1.narrow) {
     <c-sidebar-footer cSidebarToggle="sidebar1" class="border-top d-none d-lg-flex" toggle="unfoldable" style="cursor: pointer;">
