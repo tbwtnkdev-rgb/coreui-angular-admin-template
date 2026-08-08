@@ -1,0 +1,19 @@
+{
+  "name": "dashboard-api",
+  "version": "1.1.0",
+  "private": true,
+  "description": "HTTP API over the dashboard database",
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.3"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test --test-concurrency=1 test/"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.16.3"
+  },
+  "license": "MIT"
+}
