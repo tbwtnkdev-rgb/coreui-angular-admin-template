@@ -103,6 +103,57 @@ jobs:
           psql -c "\dt" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+  api:
+    name: API
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: dashboard
+          POSTGRES_USER: dashboard
+          POSTGRES_PASSWORD: ci-throwaway
+        options: >-
+          --health-cmd "pg_isready -U dashboard -d dashboard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: dashboard
+      PGUSER: dashboard
+      PGPASSWORD: ci-throwaway
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.15.0
+
+      # The API tests read real rows, so they need the schema and the seed.
+      - name: Apply schema and seed
+        run: |
+          for file in db/*.sql; do
+            psql -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+
+      - name: Install
+        working-directory: server
+        run: npm install --no-audit --no-fund
+
+      # Integration tests against the live database. A mocked pool would only
+      # prove the mock matches the test's assumptions, which is the part most
+      # likely to be wrong about the database.
+      - name: Test
+        working-directory: server
+        run: npm test
+
   licences:
     name: Licence check
     runs-on: ubuntu-latest
