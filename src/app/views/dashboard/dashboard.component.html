@@ -1,4 +1,12 @@
 <section class="overview">
+  <!-- A dashboard that shows nothing when the API is down is
+       indistinguishable from one reporting zero. -->
+  @if (loadError(); as message) {
+    <p class="state-banner state-banner--error" role="alert">{{ message }}</p>
+  } @else if (isLoading()) {
+    <p class="state-banner" aria-live="polite">Loading…</p>
+  }
+
   <!-- Filters sit in one row above the charts they govern. -->
   <header class="overview__bar">
     <div class="overview__lede">

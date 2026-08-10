@@ -1,6 +1,5 @@
-import { Injectable, computed, signal } from '@angular/core';
-
-export type Trend = 'up' | 'down' | 'flat';
+import { httpResource } from '@angular/common/http';
+import { Injectable, Signal, computed, signal } from '@angular/core';
 
 export interface Metric {
   readonly id: string;
@@ -30,85 +29,99 @@ export interface Channel {
   readonly value: number;
 }
 
-export type OrderStatus = 'paid' | 'pending' | 'refunded' | 'failed';
-
-export interface Order {
-  readonly id: string;
-  readonly customer: string;
-  readonly region: string;
-  readonly placed: string;
-  readonly total: number;
-  readonly status: OrderStatus;
-}
-
 export type RangeKey = '7d' | '30d' | '90d';
-
-/** Deterministic pseudo-random so the demo renders the same on every reload. */
-const seeded = (seed: number) => {
-  let state = seed;
-  return () => {
-    state = (state * 1664525 + 1013904223) % 4294967296;
-    return state / 4294967296;
-  };
-};
-
-const buildSeries = (
-  days: number,
-  base: number,
-  drift: number,
-  seed: number
-): SeriesPoint[] => {
-  const random = seeded(seed);
-  const start = new Date(Date.UTC(2026, 4, 1));
-
-  return Array.from({ length: days }, (_, i) => {
-    const date = new Date(start.getTime() + i * 86_400_000);
-    const weekend = date.getUTCDay() === 0 || date.getUTCDay() === 6;
-    const wave = Math.sin(i / 5.5) * base * 0.12;
-    const noise = (random() - 0.5) * base * 0.16;
-    const value = base + drift * i + wave + noise - (weekend ? base * 0.22 : 0);
-
-    return { date: date.toISOString().slice(0, 10), value: Math.max(0, Math.round(value)) };
-  });
-};
 
 const RANGE_DAYS: Record<RangeKey, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
-const CUSTOMERS = [
-  'Nordwind Logistics', 'Kanda Foods', 'Bluewave Studio', 'Orchid Health',
-  'Pathfinder Labs', 'Verde Market', 'Sunbelt Freight', 'Atlas Interiors',
-  'Copperline Media', 'Harbour Analytics', 'Tidepool Games', 'Ridgeway Legal',
-];
-const REGIONS = ['APAC', 'EMEA', 'North America', 'LATAM'];
-const STATUSES: OrderStatus[] = ['paid', 'paid', 'paid', 'pending', 'refunded', 'failed'];
+interface RevenueDayApi {
+  readonly day: string;
+  readonly revenueMinor: number;
+  readonly ordersCount: number;
+}
+
+interface RevenueApiResponse {
+  readonly data: readonly RevenueDayApi[];
+}
+
+interface ChannelApi {
+  readonly code: string;
+  readonly name: string;
+  readonly sessions: number;
+}
+
+interface ChannelsApiResponse {
+  readonly data: readonly ChannelApi[];
+}
+
+/** Minor units (satang) to major units (baht) — the API never sends money any other way. */
+const toMajorUnits = (minor: number): number => minor / 100;
 
 @Injectable({ providedIn: 'root' })
 export class AnalyticsService {
   readonly range = signal<RangeKey>('30d');
 
-  private readonly revenue = buildSeries(90, 42_000, 180, 7);
-  private readonly orders = buildSeries(90, 610, 2.4, 19);
+  // Always the full 90-day window: every range view AND the previous-period
+  // comparison for the hero delta are sliced from it client-side. Refetching
+  // per range would still need the wider window for the comparison anyway.
+  private readonly revenueResource = httpResource<RevenueApiResponse>(
+    () => '/api/analytics/revenue?range=90d'
+  );
+
+  // Channels are summed server-side over the requested window, so this one
+  // genuinely refetches when the range changes.
+  private readonly channelsResource = httpResource<ChannelsApiResponse>(
+    () => `/api/analytics/channels?range=${this.range()}`
+  );
+
+  readonly isLoading = computed(
+    () => this.revenueResource.isLoading() || this.channelsResource.isLoading()
+  );
+
+  readonly error: Signal<string | null> = computed(() => {
+    const failure = this.revenueResource.error() ?? this.channelsResource.error();
+    return failure ? 'Could not load analytics data.' : null;
+  });
+
+  // hasValue() before value(): a resource in the error state throws from
+  // value() rather than returning undefined, so an unguarded read here would
+  // crash every computed signal below the moment a request fails — right
+  // when the error banner most needs the rest of the page to keep rendering.
+  private readonly revenueDaily = computed(() =>
+    this.revenueResource.hasValue() ? this.revenueResource.value().data : []
+  );
 
   readonly series = computed<Series[]>(() => {
     const days = RANGE_DAYS[this.range()];
+    const window = this.revenueDaily().slice(-days);
+
     return [
-      { id: 'revenue', label: 'Revenue', points: this.revenue.slice(-days) },
-      { id: 'orders', label: 'Orders', points: this.orders.slice(-days) },
+      {
+        id: 'revenue',
+        label: 'Revenue',
+        points: window.map((day) => ({ date: day.day, value: toMajorUnits(day.revenueMinor) }))
+      },
+      {
+        id: 'orders',
+        label: 'Orders',
+        points: window.map((day) => ({ date: day.day, value: day.ordersCount }))
+      }
     ];
   });
 
   readonly metrics = computed<Metric[]>(() => {
     const days = RANGE_DAYS[this.range()];
-    const revenue = this.revenue.slice(-days);
-    const orders = this.orders.slice(-days);
-    const previous = this.revenue.slice(-days * 2, -days);
+    const daily = this.revenueDaily();
+    const window = daily.slice(-days);
+    const previous = daily.slice(-days * 2, -days);
 
-    const sum = (points: readonly SeriesPoint[]) =>
-      points.reduce((total, point) => total + point.value, 0);
+    const sumRevenue = (rows: readonly RevenueDayApi[]) =>
+      rows.reduce((total, row) => total + toMajorUnits(row.revenueMinor), 0);
+    const sumOrders = (rows: readonly RevenueDayApi[]) =>
+      rows.reduce((total, row) => total + row.ordersCount, 0);
 
-    const revenueTotal = sum(revenue);
-    const previousTotal = sum(previous) || revenueTotal;
-    const orderTotal = sum(orders);
+    const revenueTotal = sumRevenue(window);
+    const previousTotal = sumRevenue(previous) || revenueTotal;
+    const orderTotal = sumOrders(window);
 
     return [
       {
@@ -116,9 +129,9 @@ export class AnalyticsService {
         label: 'Revenue',
         value: revenueTotal,
         unit: 'currency',
-        delta: (revenueTotal - previousTotal) / previousTotal,
+        delta: previousTotal === 0 ? 0 : (revenueTotal - previousTotal) / previousTotal,
         riseIsGood: true,
-        spark: revenue.map((point) => point.value),
+        spark: window.map((row) => toMajorUnits(row.revenueMinor))
       },
       {
         id: 'orders',
@@ -127,7 +140,7 @@ export class AnalyticsService {
         unit: '',
         delta: 0.084,
         riseIsGood: true,
-        spark: orders.map((point) => point.value),
+        spark: window.map((row) => row.ordersCount)
       },
       {
         id: 'aov',
@@ -136,45 +149,26 @@ export class AnalyticsService {
         unit: 'currency',
         delta: -0.021,
         riseIsGood: true,
-        spark: revenue.map((point, i) => point.value / Math.max(1, orders[i]?.value ?? 1)),
+        spark: window.map((row) => toMajorUnits(row.revenueMinor) / Math.max(1, row.ordersCount))
       },
       {
+        // No churn table exists yet, so this stays a fixed placeholder rather
+        // than a number computed from data that is not there. A fabricated
+        // trend would be worse than an honest static one.
         id: 'churn',
         label: 'Churn',
         value: 2.4,
         unit: 'percent',
         delta: -0.006,
         riseIsGood: false,
-        spark: [3.1, 3.0, 2.9, 2.9, 2.7, 2.6, 2.5, 2.4],
-      },
+        spark: [3.1, 3.0, 2.9, 2.9, 2.7, 2.6, 2.5, 2.4]
+      }
     ];
   });
 
   readonly channels = computed<Channel[]>(() => {
-    const scale = RANGE_DAYS[this.range()] / 30;
-    return [
-      { label: 'Direct', value: Math.round(18_400 * scale) },
-      { label: 'Organic search', value: Math.round(14_950 * scale) },
-      { label: 'Referral', value: Math.round(9_120 * scale) },
-      { label: 'Email', value: Math.round(6_480 * scale) },
-      { label: 'Social', value: Math.round(3_260 * scale) },
-    ];
-  });
-
-  readonly recentOrders = computed<Order[]>(() => {
-    const random = seeded(31);
-
-    return Array.from({ length: 24 }, (_, i) => {
-      const day = 28 - (i % 28);
-      return {
-        id: `ORD-${(4821 - i).toString().padStart(4, '0')}`,
-        customer: CUSTOMERS[Math.floor(random() * CUSTOMERS.length)],
-        region: REGIONS[Math.floor(random() * REGIONS.length)],
-        placed: `2026-07-${day.toString().padStart(2, '0')}`,
-        total: Math.round(180 + random() * 5_400),
-        status: STATUSES[Math.floor(random() * STATUSES.length)],
-      };
-    });
+    const rows = this.channelsResource.hasValue() ? this.channelsResource.value().data : [];
+    return rows.map((channel) => ({ label: channel.name, value: channel.sessions }));
   });
 
   setRange(range: RangeKey): void {

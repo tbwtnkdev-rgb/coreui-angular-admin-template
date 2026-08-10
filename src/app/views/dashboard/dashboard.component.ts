@@ -46,11 +46,17 @@ export class DashboardComponent {
   protected readonly range = this.#analytics.range;
   protected readonly metrics = this.#analytics.metrics;
   protected readonly channels = this.#analytics.channels;
+  protected readonly isLoading = this.#analytics.isLoading;
+  protected readonly loadError = this.#analytics.error;
 
   /** Re-read on theme change so the charts follow the palette. */
   readonly #palette = signal<Palette>(this.#readPalette());
 
-  protected readonly hero = computed(() => this.metrics()[0]);
+  // By id, not position: metrics() is service-owned, and a reorder there
+  // should not silently swap which figure gets the hero treatment.
+  protected readonly hero = computed(
+    () => this.metrics().find((metric) => metric.id === 'revenue') ?? this.metrics()[0]
+  );
 
   protected readonly revenueChart = computed<ChartData>(() => {
     const palette = this.#palette();

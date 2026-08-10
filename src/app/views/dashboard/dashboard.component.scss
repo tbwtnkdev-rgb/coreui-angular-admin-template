@@ -4,6 +4,21 @@
   padding-block-end: var(--gap-section);
 }
 
+.state-banner {
+  margin: 0;
+  padding: 0.5rem var(--gap);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--ink-secondary);
+  font-size: var(--text-small);
+}
+
+.state-banner--error {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+
 .overview__bar {
   display: flex;
   flex-wrap: wrap;
