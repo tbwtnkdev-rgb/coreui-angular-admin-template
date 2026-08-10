@@ -1,4 +1,12 @@
 <section class="orders">
+  <!-- A dashboard that shows nothing when the API is down is
+       indistinguishable from one reporting zero orders. -->
+  @if (loadError(); as message) {
+    <p class="state-banner state-banner--error" role="alert">{{ message }}</p>
+  } @else if (isLoading()) {
+    <p class="state-banner" aria-live="polite">Loading orders…</p>
+  }
+
   <!-- Filters in one row above the data they govern. -->
   <header class="orders__filters">
     <label class="field">

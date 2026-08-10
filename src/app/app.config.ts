@@ -1,3 +1,4 @@
+import { provideHttpClient, withFetch } from '@angular/common/http';
 import { ApplicationConfig } from '@angular/core';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import {
@@ -26,7 +27,10 @@ export const appConfig: ApplicationConfig = {
       withHashLocation()
     ),
     IconSetService,
-    provideAnimationsAsync()
+    provideAnimationsAsync(),
+    // withFetch: httpResource is built on the Fetch API, and using it
+    // everywhere avoids running two HTTP stacks in the same app.
+    provideHttpClient(withFetch())
   ]
 };
 

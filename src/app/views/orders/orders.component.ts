@@ -2,7 +2,7 @@ import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { AnalyticsService, Order, OrderStatus } from '../../core/analytics.service';
+import { Order, OrderStatus, OrdersService } from '../../core/orders.service';
 
 type SortKey = 'id' | 'customer' | 'region' | 'placed' | 'total' | 'status';
 type Direction = 'asc' | 'desc';
@@ -40,11 +40,13 @@ const STATUSES: readonly OrderStatus[] = ['paid', 'pending', 'refunded', 'failed
   imports: [DecimalPipe, FormsModule]
 })
 export class OrdersComponent {
-  readonly #analytics = inject(AnalyticsService);
+  readonly #orders = inject(OrdersService);
 
   protected readonly columns = COLUMNS;
   protected readonly statuses = STATUSES;
   protected readonly glyph = STATUS_GLYPH;
+  protected readonly isLoading = this.#orders.isLoading;
+  protected readonly loadError = this.#orders.error;
 
   protected readonly query = signal('');
   protected readonly status = signal<OrderStatus | 'all'>('all');
@@ -57,7 +59,7 @@ export class OrdersComponent {
     const key = this.sortKey();
     const factor = this.direction() === 'asc' ? 1 : -1;
 
-    const filtered = this.#analytics.recentOrders().filter((order) => {
+    const filtered = this.#orders.orders().filter((order) => {
       if (status !== 'all' && order.status !== status) return false;
       if (!needle) return true;
       return (
