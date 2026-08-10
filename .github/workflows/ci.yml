@@ -19,7 +19,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
@@ -78,7 +78,7 @@ jobs:
       PGPASSWORD: ci-throwaway
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Apply schema
         run: |
@@ -130,7 +130,7 @@ jobs:
       PGPASSWORD: ci-throwaway
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
@@ -160,7 +160,7 @@ jobs:
     name: Compose
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Local to this runner and destroyed with it — see the Database and API
       # jobs for why this is not a secret.
@@ -198,7 +198,7 @@ jobs:
     name: Licence check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
