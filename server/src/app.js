@@ -1,6 +1,10 @@
 import express from 'express';
 
 import { errorHandler, notFoundHandler, route } from './middleware/errors.js';
+import { createAnalyticsRepository } from './repositories/analytics.js';
+import { createOrdersRepository } from './repositories/orders.js';
+import { createAnalyticsRouter } from './routes/analytics.js';
+import { createOrdersRouter } from './routes/orders.js';
 
 /**
  * Builds the app around an injected pool so tests can hand in their own
@@ -27,6 +31,19 @@ export const createApp = ({ pool, config }) => {
         uptimeSeconds: Math.round(process.uptime())
       });
     })
+  );
+
+  app.use(
+    '/api/orders',
+    createOrdersRouter({
+      repository: createOrdersRepository(pool),
+      maxPageSize: config.maxPageSize
+    })
+  );
+
+  app.use(
+    '/api/analytics',
+    createAnalyticsRouter({ repository: createAnalyticsRepository(pool) })
   );
 
   app.use(notFoundHandler);
