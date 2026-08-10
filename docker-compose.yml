@@ -24,5 +24,43 @@ services:
       retries: 10
       start_period: 10s
 
+  api:
+    build:
+      context: ./server
+    container_name: dashboard-api
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-dashboard}
+      PGUSER: ${POSTGRES_USER:-dashboard}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PORT: 3000
+    depends_on:
+      db:
+        # Not just "started" — the API's first request would otherwise race
+        # Postgres's own startup, which accepts connections before it can
+        # answer them.
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: see the app service's Dockerfile for why —
+      # kept consistent here rather than relying on Express's dual-stack bind.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+    container_name: dashboard-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   db-data:

@@ -143,9 +143,11 @@ jobs:
             psql -v ON_ERROR_STOP=1 -q -f "$file"
           done
 
+      # Unlike the root app's lockfile, this one has no platform-specific
+      # entries — express and pg are pure JS — so npm ci is safe here.
       - name: Install
         working-directory: server
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       # Integration tests against the live database. A mocked pool would only
       # prove the mock matches the test's assumptions, which is the part most
@@ -153,6 +155,44 @@ jobs:
       - name: Test
         working-directory: server
         run: npm test
+
+  compose:
+    name: Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Local to this runner and destroyed with it — see the Database and API
+      # jobs for why this is not a secret.
+      - name: Write .env
+        run: echo "POSTGRES_PASSWORD=ci-throwaway" > .env
+
+      # --wait blocks until every service with a healthcheck reports healthy
+      # (or fails the step if one doesn't), so this is the actual proof that
+      # db -> api -> app come up in the right order and stay up, not just that
+      # each Dockerfile builds in isolation. Wrapped in timeout so a stuck
+      # container fails the job instead of running until the workflow's own
+      # ceiling does.
+      - name: Bring up the stack
+        run: timeout 180 docker compose up -d --build --wait
+
+      - name: Verify the app serves and can reach the database through the API
+        run: |
+          curl -sf http://localhost:8080/ | grep -qi '<title>' \
+            || { echo "::error::app did not serve an HTML page"; exit 1; }
+
+          health=$(curl -sf http://localhost:8080/api/health)
+          echo "$health"
+          echo "$health" | grep -q '"reachable":true' \
+            || { echo "::error::/api/health did not report the database reachable"; exit 1; }
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
 
   licences:
     name: Licence check
