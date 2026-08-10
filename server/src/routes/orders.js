@@ -2,11 +2,16 @@ import { Router } from 'express';
 
 import { badRequest, notFound, route } from '../middleware/errors.js';
 
+// UI-facing key -> fully-qualified column the repository's allow-list
+// recognises. Customer and region need the joined table's alias, which is
+// why these are qualified here rather than left as bare column names.
 const SORT_FIELDS = new Map([
-  ['placed', 'placed_on'],
-  ['total', 'total_minor'],
-  ['reference', 'reference'],
-  ['status', 'status']
+  ['reference', 'o.reference'],
+  ['customer', 'c.name'],
+  ['region', 'r.name'],
+  ['placed', 'o.placed_on'],
+  ['total', 'o.total_minor'],
+  ['status', 'o.status']
 ]);
 const STATUSES = new Set(['paid', 'pending', 'refunded', 'failed']);
 

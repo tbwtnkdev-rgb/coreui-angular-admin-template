@@ -4,14 +4,18 @@
  * into SQL is how the order list becomes an injection point.
  */
 
-const ALLOWED_SORT = new Set(['placed_on', 'total_minor', 'reference', 'status']);
+// Fully-qualified column expressions, not bare names: sorting by customer or
+// region requires the joined table's alias, and keeping every allowed value
+// pre-qualified here means the query builder below never assembles a column
+// reference out of parts, only ever selects one whole string from this set.
+const ALLOWED_SORT = new Set(['o.reference', 'c.name', 'r.name', 'o.placed_on', 'o.total_minor', 'o.status']);
 const ALLOWED_STATUS = new Set(['paid', 'pending', 'refunded', 'failed']);
 
 export const createOrdersRepository = (pool) => ({
   /**
    * @param {object} options
    * @param {string} [options.status] one of ALLOWED_STATUS
-   * @param {string} [options.search] matched against reference and customer name
+   * @param {string} [options.search] matched against reference, customer and region
    * @param {string} options.sort one of ALLOWED_SORT
    * @param {'asc'|'desc'} options.direction
    * @param {number} options.limit already clamped by the caller
@@ -26,9 +30,12 @@ export const createOrdersRepository = (pool) => ({
     }
 
     // Column names cannot be parameters, so `sort` and `direction` are
-    // interpolated only after being checked against the allow-lists above —
-    // never against caller input directly.
-    const orderBy = `o.${sort} ${direction === 'asc' ? 'ASC' : 'DESC'}`;
+    // interpolated only after being checked against the allow-list above —
+    // never against caller input directly. `o.id` is a secondary key so ties
+    // in the sort column (two orders on the same day, two customers with the
+    // same name) get a stable order; without it, LIMIT/OFFSET pagination can
+    // reshuffle tied rows between pages and skip or repeat one.
+    const orderBy = `${sort} ${direction === 'asc' ? 'ASC' : 'DESC'}, o.id ASC`;
 
     const clauses = [];
     const params = [];
