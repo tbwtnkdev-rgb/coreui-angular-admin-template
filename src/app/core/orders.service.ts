@@ -1,13 +1,11 @@
 import { httpResource } from '@angular/common/http';
-import { Injectable, Signal, computed } from '@angular/core';
+import { Injectable, Signal, computed, signal } from '@angular/core';
 
 export type OrderStatus = 'paid' | 'pending' | 'refunded' | 'failed';
+export type OrderSortKey = 'reference' | 'customer' | 'region' | 'placed' | 'total' | 'status';
+export type SortDirection = 'asc' | 'desc';
 
-/**
- * Shape the pages consume, kept identical to what the previous generated
- * version exposed — only the source of the data changed, not what a
- * component does with it.
- */
+/** Shape the pages consume — flat fields, independent of the API's nesting. */
 export interface Order {
   readonly id: string;
   readonly customer: string;
@@ -31,6 +29,19 @@ interface OrdersApiResponse {
   readonly meta: { readonly total: number };
 }
 
+interface Query {
+  readonly status: OrderStatus | 'all';
+  readonly search: string;
+  readonly sort: OrderSortKey;
+  readonly direction: SortDirection;
+  readonly page: number;
+}
+
+/** Fixed rather than caller-adjustable — the API enforces its own ceiling regardless. */
+export const PAGE_SIZE = 10;
+
+const DEFAULT_QUERY: Query = { status: 'all', search: '', sort: 'placed', direction: 'desc', page: 1 };
+
 /** Minor units (satang) to major units (baht). */
 const toMajorUnits = (minor: number): number => minor / 100;
 
@@ -45,11 +56,25 @@ const toOrder = (row: OrderApi): Order => ({
 
 @Injectable({ providedIn: 'root' })
 export class OrdersService {
-  // The seed loads a few dozen rows, so one page at the server's ceiling
-  // covers all of them and the existing client-side sort/filter keeps
-  // working unchanged. Real pagination replaces this once the table needs
-  // to handle more rows than fit in one response.
-  private readonly resource = httpResource<OrdersApiResponse>(() => '/api/orders?limit=200');
+  private readonly query = signal<Query>(DEFAULT_QUERY);
+
+  // Sorting, filtering and paging all happen in this one request — the table
+  // never holds more than a page of rows to sort or filter itself, which is
+  // the point: an in-memory approach only works while every row fits in
+  // memory, and that stops being true well before 200 orders.
+  private readonly resource = httpResource<OrdersApiResponse>(() => {
+    const q = this.query();
+    const params = new URLSearchParams({
+      sort: q.sort,
+      direction: q.direction,
+      limit: String(PAGE_SIZE),
+      offset: String((q.page - 1) * PAGE_SIZE)
+    });
+    if (q.status !== 'all') params.set('status', q.status);
+    if (q.search) params.set('search', q.search);
+
+    return `/api/orders?${params.toString()}`;
+  });
 
   // hasValue() before value(): a resource in the error state throws from
   // value() rather than returning undefined, so an unguarded read here would
@@ -59,9 +84,42 @@ export class OrdersService {
     this.resource.hasValue() ? this.resource.value().data.map(toOrder) : []
   );
 
+  readonly total = computed(() => (this.resource.hasValue() ? this.resource.value().meta.total : 0));
+
+  readonly page = computed(() => this.query().page);
+  readonly status = computed(() => this.query().status);
+  readonly sort = computed(() => this.query().sort);
+  readonly direction = computed(() => this.query().direction);
   readonly isLoading = this.resource.isLoading;
 
   readonly error: Signal<string | null> = computed(() =>
     this.resource.error() ? 'Could not load orders.' : null
   );
+
+  setStatus(status: OrderStatus | 'all'): void {
+    this.query.update((q) => ({ ...q, status, page: 1 }));
+  }
+
+  setSearch(search: string): void {
+    this.query.update((q) => ({ ...q, search, page: 1 }));
+  }
+
+  sortBy(key: OrderSortKey): void {
+    this.query.update((q) => {
+      if (q.sort === key) {
+        return { ...q, direction: q.direction === 'asc' ? 'desc' : 'asc', page: 1 };
+      }
+      // Numbers and dates are most useful largest-first; names read A-Z.
+      const direction: SortDirection = key === 'total' || key === 'placed' ? 'desc' : 'asc';
+      return { ...q, sort: key, direction, page: 1 };
+    });
+  }
+
+  goToPage(page: number): void {
+    this.query.update((q) => ({ ...q, page: Math.max(1, page) }));
+  }
+
+  reset(): void {
+    this.query.set(DEFAULT_QUERY);
+  }
 }

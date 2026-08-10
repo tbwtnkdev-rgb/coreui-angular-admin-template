@@ -15,8 +15,8 @@
         type="search"
         class="field__input"
         placeholder="Search order, customer or region"
-        [ngModel]="query()"
-        (ngModelChange)="query.set($event)"
+        [ngModel]="searchText()"
+        (ngModelChange)="onSearchInput($event)"
       />
     </label>
 
@@ -26,7 +26,7 @@
         class="chip"
         [class.chip--on]="status() === 'all'"
         [attr.aria-pressed]="status() === 'all'"
-        (click)="status.set('all')"
+        (click)="setStatus('all')"
       >
         All
       </button>
@@ -36,7 +36,7 @@
           class="chip"
           [class.chip--on]="status() === option"
           [attr.aria-pressed]="status() === option"
-          (click)="status.set(option)"
+          (click)="setStatus(option)"
         >
           <span class="chip__glyph" [class]="'status-' + option" aria-hidden="true">{{ glyph[option] }}</span>
           {{ option }}
@@ -48,15 +48,19 @@
   </header>
 
   <p class="orders__summary">
-    <strong class="tabular">{{ rows().length }}</strong> orders
-    · <strong class="tabular">{{ total() | number: '1.0-0' }}</strong> THB
+    @if (total() > 0) {
+      <strong class="tabular">{{ rangeStart() }}–{{ rangeEnd() }}</strong> of
+      <strong class="tabular">{{ total() }}</strong> orders
+    } @else {
+      No orders match that filter.
+    }
   </p>
 
   <!-- Wide content scrolls inside its own container, never the page. -->
   <div class="orders__scroll">
     <table class="table">
       <caption class="visually-hidden">
-        Orders, sortable by any column
+        Orders, sortable by any column, one page at a time
       </caption>
       <thead>
         <tr>
@@ -96,11 +100,23 @@
         } @empty {
           <tr>
             <td class="table__empty" [attr.colspan]="columns.length">
-              No orders match that filter.
+              @if (!isLoading()) {
+                No orders match that filter.
+              }
             </td>
           </tr>
         }
       </tbody>
     </table>
   </div>
+
+  <nav class="pager" aria-label="Orders pages">
+    <button type="button" class="chip" [disabled]="page() <= 1" (click)="previousPage()">
+      ← Previous
+    </button>
+    <span class="pager__status tabular" aria-live="polite">Page {{ page() }} of {{ pageCount() }}</span>
+    <button type="button" class="chip" [disabled]="page() >= pageCount()" (click)="nextPage()">
+      Next →
+    </button>
+  </nav>
 </section>

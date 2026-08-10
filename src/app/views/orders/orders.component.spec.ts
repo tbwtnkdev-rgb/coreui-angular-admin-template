@@ -1,22 +1,36 @@
 import { provideHttpClient, withFetch } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ApplicationRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { PAGE_SIZE } from '../../core/orders.service';
 import { OrdersComponent } from './orders.component';
 
-const FIXTURE = {
-  data: [
-    { reference: 'ORD-01', customerName: 'APAC Co', region: { code: 'APAC', name: 'APAC' }, placedOn: '2026-07-01', status: 'paid', totalMinor: 100000, currency: 'THB' },
-    { reference: 'ORD-02', customerName: 'EMEA Co', region: { code: 'EMEA', name: 'EMEA' }, placedOn: '2026-07-02', status: 'failed', totalMinor: 90000, currency: 'THB' },
-    { reference: 'ORD-03', customerName: 'Big Co', region: { code: 'NA', name: 'NA' }, placedOn: '2026-07-03', status: 'paid', totalMinor: 500000, currency: 'THB' }
-  ],
-  meta: { total: 3, limit: 200, offset: 0 }
-};
+const page = (total: number, rows = 1) => ({
+  data: Array.from({ length: rows }, (_, i) => ({
+    reference: `ORD-${i}`,
+    customerName: 'A Co',
+    region: { code: 'APAC', name: 'APAC' },
+    placedOn: '2026-07-01',
+    status: 'paid',
+    totalMinor: 10000,
+    currency: 'THB'
+  })),
+  meta: { total, limit: PAGE_SIZE, offset: 0 }
+});
+
+// httpResource builds its request URL as one string rather than via Angular's
+// HttpParams, so the mock request's own `.params` stays empty — the query
+// string only shows up in `.url`.
+const paramsOf = (url: string) => new URL(url, 'http://localhost').searchParams;
 
 describe('OrdersComponent', () => {
   let fixture: ComponentFixture<OrdersComponent>;
   let component: any;
   let http: HttpTestingController;
+
+  const expectOrdersRequest = () => http.expectOne((req) => req.url.startsWith('/api/orders'));
+  const settle = () => TestBed.inject(ApplicationRef).whenStable();
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -29,10 +43,10 @@ describe('OrdersComponent', () => {
     component = fixture.componentInstance;
 
     // fixture.detectChanges() flushes the constructor's pending effects,
-    // which is what fires httpResource's request — TestBed.tick() alone
-    // does not run change detection on a specific fixture.
+    // which is what fires httpResource's initial request.
     fixture.detectChanges();
-    http.expectOne('/api/orders?limit=200').flush(FIXTURE);
+    expectOrdersRequest().flush(page(35, PAGE_SIZE));
+    await settle();
     fixture.detectChanges();
   });
 
@@ -45,72 +59,121 @@ describe('OrdersComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('loads the fetched orders', () => {
-    expect(component.rows().length).toBe(3);
+  it('loads the fetched page', () => {
+    expect(component.rows().length).toBe(PAGE_SIZE);
+    expect(component.total()).toBe(35);
   });
 
-  it('filters on customer, id and region together', () => {
-    // Arrange
-    const all = component.rows().length;
+  it('shows the range within the total, not just a row count', () => {
+    expect(component.rangeStart()).toBe(1);
+    expect(component.rangeEnd()).toBe(PAGE_SIZE);
+    expect(component.pageCount()).toBe(4); // ceil(35 / 10)
+  });
 
+  describe('search debounce', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('waits for typing to settle before sending a request', async () => {
+      // Arrange & Act
+      component.onSearchInput('n');
+      await vi.advanceTimersByTimeAsync(100);
+      component.onSearchInput('no');
+      await vi.advanceTimersByTimeAsync(100);
+      component.onSearchInput('nord');
+
+      // Assert — nothing sent yet; still inside the debounce window from the
+      // last keystroke.
+      http.expectNone((req) => req.url.startsWith('/api/orders'));
+
+      // Act
+      await vi.advanceTimersByTimeAsync(300);
+      fixture.detectChanges(); // flushes the effect the debounced setSearch() scheduled
+
+      // Assert — exactly one request, for the final value.
+      const request = expectOrdersRequest();
+      expect(paramsOf(request.request.url).get('search')).toBe('nord');
+      request.flush(page(0, 0));
+    });
+
+    it('cancels a pending debounce on destroy so it cannot fire after teardown', async () => {
+      // Arrange
+      component.onSearchInput('leaked');
+
+      // Act
+      fixture.destroy();
+      await vi.advanceTimersByTimeAsync(300);
+      TestBed.tick();
+
+      // Assert — no request follows a destroyed component's debounce timer.
+      http.expectNone((req) => req.url.startsWith('/api/orders'));
+    });
+
+    it('reset clears the visible search text immediately, not after the debounce', async () => {
+      // Arrange — change something away from the defaults first, otherwise
+      // clear() has nothing to observably undo.
+      component.setStatus('paid');
+      fixture.detectChanges();
+      expectOrdersRequest().flush(page(1, 1));
+      component.onSearchInput('something');
+
+      // Act
+      component.clear();
+      fixture.detectChanges(); // flushes the effect that fires the reset request
+      const request = expectOrdersRequest();
+      expect(paramsOf(request.request.url).has('status')).toBe(false);
+      request.flush(page(35, PAGE_SIZE));
+      await vi.advanceTimersByTimeAsync(300); // a leftover debounce would fire here
+
+      // Assert
+      expect(component.searchText()).toBe('');
+      http.expectNone((req) => req.url.startsWith('/api/orders'));
+    });
+  });
+
+  it('disables Previous on the first page and Next on the last', () => {
+    // Arrange — already on page 1 of 4 from the 35-row fixture in beforeEach.
+    const [prevButton, nextButton] = fixture.nativeElement.querySelectorAll('.pager .chip');
+
+    // Assert
+    expect(prevButton.disabled).toBe(true);
+    expect(nextButton.disabled).toBe(false);
+  });
+
+  it('requests the next page and reflects it once loaded', async () => {
     // Act
-    component.query.set('apac');
+    component.nextPage();
+    fixture.detectChanges(); // flushes the effect that fires the new request
+    const request = expectOrdersRequest();
 
-    // Assert
-    expect(component.rows().length).toBeLessThan(all);
-    expect(component.rows().every((o: any) => o.region === 'APAC')).toBe(true);
+    // Assert the request, then resolve it and check the resulting state.
+    expect(paramsOf(request.request.url).get('offset')).toBe(String(PAGE_SIZE));
+    request.flush(page(35, PAGE_SIZE));
+    await settle();
+    fixture.detectChanges();
+
+    expect(component.page()).toBe(2);
+    expect(component.rangeStart()).toBe(11);
   });
 
-  it('narrows to a single status', () => {
-    // Arrange & Act
-    component.status.set('paid');
-
-    // Assert
-    expect(component.rows().length).toBe(2);
-    expect(component.rows().every((o: any) => o.status === 'paid')).toBe(true);
-  });
-
-  it('flips direction when the same column is clicked twice', () => {
-    // Arrange
-    component.sortBy('customer');
-    const first = component.direction();
-
+  it('delegates sorting to the service and reports aria-sort from it', async () => {
     // Act
     component.sortBy('customer');
+    fixture.detectChanges(); // flushes the effect that fires the new request
+    const request = expectOrdersRequest();
 
     // Assert
-    expect(component.direction()).not.toBe(first);
-  });
+    expect(paramsOf(request.request.url).get('sort')).toBe('customer');
+    request.flush(page(35, PAGE_SIZE));
+    await settle();
+    fixture.detectChanges();
 
-  it('sorts numeric columns numerically, not lexically', () => {
-    // Arrange & Act — descending puts the largest total first, which a string
-    // comparison would not (it would rank "900" above "1000").
-    component.sortBy('total');
-    const totals = component.rows().map((o: any) => o.total);
-
-    // Assert
-    expect(totals).toEqual([...totals].sort((a: number, b: number) => b - a));
-  });
-
-  it('reports aria-sort only for the active column', () => {
-    // Arrange & Act
-    component.sortBy('region');
-
-    // Assert
-    expect(component.ariaSort('region')).toBe('ascending');
+    expect(component.ariaSort('customer')).toBe('ascending');
     expect(component.ariaSort('total')).toBe('none');
-  });
-
-  it('resets both filters at once', () => {
-    // Arrange
-    component.query.set('nord');
-    component.status.set('failed');
-
-    // Act
-    component.clear();
-
-    // Assert
-    expect(component.query()).toBe('');
-    expect(component.status()).toBe('all');
   });
 });

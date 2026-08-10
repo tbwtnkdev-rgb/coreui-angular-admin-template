@@ -172,6 +172,30 @@
   color: var(--ink-muted);
 }
 
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap);
+}
+
+.pager__status {
+  font-size: var(--text-small);
+  color: var(--ink-secondary);
+  min-width: 8rem;
+  text-align: center;
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+
+  &:hover {
+    border-color: var(--rule);
+    color: var(--ink-secondary);
+  }
+}
+
 // Status is an icon plus a word. The colour is reinforcement, never the
 // carrier — two of these sit below 3:1 on the light surface by design.
 .status {

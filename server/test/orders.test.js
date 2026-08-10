@@ -70,6 +70,51 @@ describe('orders', () => {
     assert.deepEqual(totals, sorted, 'descending total order should be numeric, not string, order');
   });
 
+  it('sorts by customer name, joined from another table', async () => {
+    const response = await fetch(`${baseUrl}/api/orders?sort=customer&direction=asc&limit=50`);
+    const body = await response.json();
+
+    const names = body.data.map((order) => order.customerName);
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    assert.deepEqual(names, sorted, 'ascending customer order should be alphabetical');
+  });
+
+  it('sorts by region name, joined through the customer', async () => {
+    const response = await fetch(`${baseUrl}/api/orders?sort=region&direction=asc&limit=50`);
+    const body = await response.json();
+
+    const names = body.data.map((order) => order.region.name);
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    assert.deepEqual(names, sorted, 'ascending region order should be alphabetical');
+  });
+
+  it('paginates without skipping or repeating a row across pages', async () => {
+    // Two pages of 10, sorted by a column with real ties (status has only
+    // four distinct values across the seed) — this is exactly where a query
+    // with no tie-breaker would reshuffle rows between requests.
+    const [pageOne, pageTwo] = await Promise.all([
+      fetch(`${baseUrl}/api/orders?sort=status&direction=asc&limit=10&offset=0`).then((r) => r.json()),
+      fetch(`${baseUrl}/api/orders?sort=status&direction=asc&limit=10&offset=10`).then((r) => r.json())
+    ]);
+
+    const seenOnPageOne = new Set(pageOne.data.map((order) => order.reference));
+    const overlap = pageTwo.data.filter((order) => seenOnPageOne.has(order.reference));
+
+    assert.deepEqual(overlap, [], 'no reference should appear on both pages');
+  });
+
+  it('searches across reference, customer and region together', async () => {
+    const response = await fetch(`${baseUrl}/api/orders?search=nordwind&limit=50`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.ok(body.data.length > 0, 'the seed includes a Nordwind Logistics customer');
+    assert.ok(
+      body.data.every((order) => order.customerName.toLowerCase().includes('nordwind')),
+      'every match should actually contain the search term somewhere it was promised to be matched'
+    );
+  });
+
   it('rejects an unknown sort column rather than interpolating it', async () => {
     const response = await fetch(`${baseUrl}/api/orders?sort=1;DROP TABLE orders;--`);
     assert.equal(response.status, 400);

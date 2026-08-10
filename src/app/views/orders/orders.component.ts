@@ -1,20 +1,17 @@
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { Order, OrderStatus, OrdersService } from '../../core/orders.service';
-
-type SortKey = 'id' | 'customer' | 'region' | 'placed' | 'total' | 'status';
-type Direction = 'asc' | 'desc';
+import { OrderSortKey, OrderStatus, OrdersService, PAGE_SIZE } from '../../core/orders.service';
 
 interface Column {
-  readonly key: SortKey;
+  readonly key: OrderSortKey;
   readonly label: string;
   readonly numeric?: boolean;
 }
 
 const COLUMNS: readonly Column[] = [
-  { key: 'id', label: 'Order' },
+  { key: 'reference', label: 'Order' },
   { key: 'customer', label: 'Customer' },
   { key: 'region', label: 'Region' },
   { key: 'placed', label: 'Placed' },
@@ -32,6 +29,9 @@ const STATUS_GLYPH: Record<OrderStatus, string> = {
 
 const STATUSES: readonly OrderStatus[] = ['paid', 'pending', 'refunded', 'failed'];
 
+/** Debounce so typing a search term does not fire a request per keystroke. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 @Component({
   selector: 'app-orders',
   templateUrl: './orders.component.html',
@@ -41,66 +41,66 @@ const STATUSES: readonly OrderStatus[] = ['paid', 'pending', 'refunded', 'failed
 })
 export class OrdersComponent {
   readonly #orders = inject(OrdersService);
+  readonly #destroyRef = inject(DestroyRef);
+  #searchTimer: ReturnType<typeof setTimeout> | undefined;
 
   protected readonly columns = COLUMNS;
   protected readonly statuses = STATUSES;
   protected readonly glyph = STATUS_GLYPH;
+
+  protected readonly rows = this.#orders.orders;
+  protected readonly total = this.#orders.total;
+  protected readonly status = this.#orders.status;
   protected readonly isLoading = this.#orders.isLoading;
   protected readonly loadError = this.#orders.error;
 
-  protected readonly query = signal('');
-  protected readonly status = signal<OrderStatus | 'all'>('all');
-  protected readonly sortKey = signal<SortKey>('placed');
-  protected readonly direction = signal<Direction>('desc');
+  // Bound to the input immediately so typing feels responsive; only pushed to
+  // the service — and the network — after the debounce settles.
+  protected readonly searchText = signal('');
 
-  protected readonly rows = computed<Order[]>(() => {
-    const needle = this.query().trim().toLowerCase();
-    const status = this.status();
-    const key = this.sortKey();
-    const factor = this.direction() === 'asc' ? 1 : -1;
-
-    const filtered = this.#orders.orders().filter((order) => {
-      if (status !== 'all' && order.status !== status) return false;
-      if (!needle) return true;
-      return (
-        order.id.toLowerCase().includes(needle) ||
-        order.customer.toLowerCase().includes(needle) ||
-        order.region.toLowerCase().includes(needle)
-      );
-    });
-
-    // Sorting a copy: the service's array is shared with other consumers.
-    return [...filtered].sort((a, b) => {
-      const left = a[key];
-      const right = b[key];
-      if (typeof left === 'number' && typeof right === 'number') {
-        return (left - right) * factor;
-      }
-      return String(left).localeCompare(String(right)) * factor;
-    });
-  });
-
-  protected readonly total = computed(() =>
-    this.rows().reduce((sum, order) => sum + order.total, 0)
+  protected readonly page = this.#orders.page;
+  protected readonly pageCount = computed(() => Math.max(1, Math.ceil(this.total() / PAGE_SIZE)));
+  protected readonly rangeStart = computed(() =>
+    this.total() === 0 ? 0 : (this.page() - 1) * PAGE_SIZE + 1
+  );
+  protected readonly rangeEnd = computed(() =>
+    Math.min(this.page() * PAGE_SIZE, this.total())
   );
 
-  protected sortBy(key: SortKey): void {
-    if (this.sortKey() === key) {
-      this.direction.update((current) => (current === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    this.sortKey.set(key);
-    // Numbers and dates are most useful largest-first; names read A-Z.
-    this.direction.set(key === 'total' || key === 'placed' ? 'desc' : 'asc');
+  constructor() {
+    this.#destroyRef.onDestroy(() => clearTimeout(this.#searchTimer));
   }
 
-  protected ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
-    if (this.sortKey() !== key) return 'none';
-    return this.direction() === 'asc' ? 'ascending' : 'descending';
+  protected onSearchInput(value: string): void {
+    this.searchText.set(value);
+    clearTimeout(this.#searchTimer);
+    this.#searchTimer = setTimeout(() => this.#orders.setSearch(value), SEARCH_DEBOUNCE_MS);
+  }
+
+  protected setStatus(status: OrderStatus | 'all'): void {
+    this.#orders.setStatus(status);
+  }
+
+  protected sortBy(key: OrderSortKey): void {
+    this.#orders.sortBy(key);
+  }
+
+  protected ariaSort(key: OrderSortKey): 'ascending' | 'descending' | 'none' {
+    if (this.#orders.sort() !== key) return 'none';
+    return this.#orders.direction() === 'asc' ? 'ascending' : 'descending';
+  }
+
+  protected previousPage(): void {
+    this.#orders.goToPage(this.page() - 1);
+  }
+
+  protected nextPage(): void {
+    this.#orders.goToPage(this.page() + 1);
   }
 
   protected clear(): void {
-    this.query.set('');
-    this.status.set('all');
+    clearTimeout(this.#searchTimer);
+    this.searchText.set('');
+    this.#orders.reset();
   }
 }
