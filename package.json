@@ -46,7 +46,7 @@
     "@angular/build": "^22.1.2",
     "@angular/cli": "^22.1.2",
     "@angular/compiler-cli": "^22.1.0",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@vitest/browser-playwright": "^4.1.10",
     "jsdom": "^30.0.1",
     "playwright": "^1.62.0",
